@@ -20,40 +20,60 @@ Signal Detection       -> breakout / pullback / support bounce / VWAP reclaim / 
 Risk Management        -> stop-loss, take-profit, position size from account risk %
 Trade Scoring          -> 0-100 confidence score across 8 weighted factors
 AI Analysis Layer      -> plain-language rationale, probability framing only
-Dashboard / API        -> FastAPI + a static dashboard
+Dashboard / API        -> Express (TypeScript) + a static dashboard
 Scheduler              -> re-scans automatically on an interval
 ```
+
+Written in **TypeScript**, compiled to plain **JavaScript** (Node.js/Express).
 
 Source layout:
 
 ```
 server/
-  app/
-    config.py       # all thresholds/limits, env-overridable, no hard-coded coins
-    market_data.py  # CoinGecko client (swappable provider interface)
-    ranking.py      # Top-N coin selection
-    indicators.py   # TA calculations (pure functions, unit-testable)
-    regime.py       # trend classification + market-wide context
-    signals.py      # entry/setup detection
-    risk.py         # SL/TP + position sizing
-    scoring.py      # 0-100 confidence scoring
-    scanner.py       # orchestrates one full scan + AI explanation layer
-    backtest.py     # historical strategy testing (win rate, drawdown, Sharpe, ...)
-    monitor.py      # live trade-status monitoring (WAITING -> ... -> TAKE_PROFIT)
-    reports.py      # formats a scan into the human-readable daily report
-    main.py         # FastAPI app, scheduler, REST endpoints
+  src/
+    config.ts       # all thresholds/limits, env-overridable, no hard-coded coins
+    marketData.ts   # CoinGecko client (swappable provider interface)
+    ranking.ts      # Top-N coin selection
+    indicators.ts   # TA calculations (pure functions, unit-testable)
+    regime.ts        # trend classification + market-wide context
+    signals.ts       # entry/setup detection
+    risk.ts          # SL/TP + position sizing
+    scoring.ts       # 0-100 confidence scoring
+    scanner.ts       # orchestrates one full scan + AI explanation layer
+    backtest.ts      # historical strategy testing (win rate, drawdown, Sharpe, ...)
+    monitor.ts       # live trade-status monitoring (WAITING -> ... -> TAKE_PROFIT)
+    reports.ts       # formats a scan into the human-readable daily report
+    server.ts        # Express app, scheduler, REST endpoints
+    test/
+      core.test.ts   # unit tests (node:test) for indicators/risk/ranking/backtest
   dashboard/
-    index.html      # static dashboard (fetches the API directly)
+    index.html       # static dashboard (fetches the API directly)
 ```
 
 ## Running locally
 
 ```bash
 cd server
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+npm install
 cp .env.example .env      # optional — defaults work with no API key
-uvicorn app.main:app --reload --port 8000
+npm run dev                # ts-node-dev, auto-reload on save
+```
+
+Or build and run the compiled JS:
+
+```bash
+cd server
+npm install
+npm run build
+npm start
+```
+
+## Running the tests
+
+```bash
+cd server
+npm run build
+npm test
 ```
 
 Open `http://localhost:8000` for the dashboard, or use the API directly:
