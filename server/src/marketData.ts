@@ -119,15 +119,18 @@ export class MarketDataProvider {
         continue;
       }
       if (res.status === 429) {
+        const body = await res.text().catch(() => "");
         throw new MarketDataError(
           `Failed to fetch ${path}: HTTP 429 (rate limited) even after ${maxRetries} retries. ` +
-            `CoinGecko's public API is heavily rate-limited without a key. Get a free Demo API key at ` +
-            `https://www.coingecko.com/en/api/pricing (no card required) and set COINGECKO_API_KEY in .env, ` +
-            `or simply wait a minute before scanning again.`
+            `CoinGecko response: ${body.slice(0, 300)} ` +
+            `If you have a Demo API key set, this may mean the key itself is being throttled/invalid rather ` +
+            `than the anonymous rate limit — check https://www.coingecko.com/en/developers/dashboard for its ` +
+            `usage/status, or wait a minute and try again.`
         );
       }
       if (!res.ok) {
-        throw new MarketDataError(`Failed to fetch ${path}: HTTP ${res.status}`);
+        const body = await res.text().catch(() => "");
+        throw new MarketDataError(`Failed to fetch ${path}: HTTP ${res.status} ${body.slice(0, 300)}`);
       }
       return res.json();
     }

@@ -21,6 +21,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+if (config.COINGECKO_API_KEY) {
+  const masked = config.COINGECKO_API_KEY.slice(0, 6) + "…" + config.COINGECKO_API_KEY.slice(-4);
+  console.log(`CoinGecko API key loaded: ${masked} (base URL: ${config.COINGECKO_BASE_URL})`);
+} else {
+  console.log(`No CoinGecko API key configured — requests will be unauthenticated and heavily rate-limited.`);
+}
+
 const state: { latestScan: any | null } = { latestScan: null };
 
 app.get("/api/health", (_req, res) => {
