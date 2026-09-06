@@ -55,7 +55,7 @@ const TIMEFRAME_TO_DAYS: Record<string, number> = {
 // request is serialized through this module-level throttle with a minimum
 // gap between calls and a retry-with-backoff on 429s, rather than hammering
 // the API and having most calls fail silently.
-const MIN_REQUEST_GAP_MS = 1500;
+const MIN_REQUEST_GAP_MS = 2200;
 let lastRequestAt = 0;
 let requestQueue: Promise<void> = Promise.resolve();
 
@@ -84,7 +84,15 @@ export class MarketDataProvider {
 
   private headers(): Record<string, string> {
     const headers: Record<string, string> = { accept: "application/json" };
-    if (this.apiKey) headers["x-cg-pro-api-key"] = this.apiKey;
+    if (this.apiKey) {
+      // Pro tier uses pro-api.coingecko.com with x-cg-pro-api-key; the free
+      // Demo tier (sign up at coingecko.com/en/api/pricing, no card needed)
+      // still uses api.coingecko.com but requires x-cg-demo-api-key instead.
+      // Sending the wrong header name is silently ignored by CoinGecko, so
+      // getting this wrong looks identical to having no key at all.
+      const isProTier = this.baseUrl.includes("pro-api.coingecko.com");
+      headers[isProTier ? "x-cg-pro-api-key" : "x-cg-demo-api-key"] = this.apiKey;
+    }
     return headers;
   }
 
@@ -92,7 +100,7 @@ export class MarketDataProvider {
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
 
-    const maxRetries = 3;
+    const maxRetries = 5;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       await throttle();
       let res: Response;
@@ -105,9 +113,18 @@ export class MarketDataProvider {
         throw new MarketDataError(`Failed to fetch ${path}: ${exc.message}`);
       }
       if (res.status === 429 && attempt < maxRetries) {
-        const retryAfter = parseFloat(res.headers.get("retry-after") || "") || (attempt + 1) * 5;
+        const retryAfter = parseFloat(res.headers.get("retry-after") || "") || 10 * 2 ** attempt;
+        console.warn(`Rate limited on ${path} (attempt ${attempt + 1}/${maxRetries}); retrying in ${retryAfter}s`);
         await sleep(retryAfter * 1000);
         continue;
+      }
+      if (res.status === 429) {
+        throw new MarketDataError(
+          `Failed to fetch ${path}: HTTP 429 (rate limited) even after ${maxRetries} retries. ` +
+            `CoinGecko's public API is heavily rate-limited without a key. Get a free Demo API key at ` +
+            `https://www.coingecko.com/en/api/pricing (no card required) and set COINGECKO_API_KEY in .env, ` +
+            `or simply wait a minute before scanning again.`
+        );
       }
       if (!res.ok) {
         throw new MarketDataError(`Failed to fetch ${path}: HTTP ${res.status}`);
