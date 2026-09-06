@@ -116,6 +116,8 @@ app.get("/api/backtest/:coinId", async (req, res) => {
   }
 });
 
+app.get("/favicon.ico", (_req, res) => res.status(204).end());
+
 const dashboardDir = path.resolve(__dirname, "..", "dashboard");
 app.use(express.static(dashboardDir));
 
