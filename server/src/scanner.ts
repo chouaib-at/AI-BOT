@@ -43,7 +43,9 @@ export async function analyzeCoin(provider: MarketDataProvider, coin: CoinSnapsh
       const candles = await provider.getOhlc(coin.id, tf);
       perTimeframeLatest[tf] = indicators.computeAll(candles);
     } catch (exc) {
-      // Skip this timeframe rather than fabricating data.
+      // Skip this timeframe rather than fabricating data, but surface why —
+      // silently swallowing this hides rate-limit/API errors from the user.
+      console.warn(`Skipping ${tf} timeframe for ${coin.symbol}: ${(exc as Error).message}`);
       continue;
     }
   }
@@ -122,7 +124,8 @@ export async function runDailyScan(accountBalance?: number): Promise<any> {
       try {
         const candles = await provider.getOhlc(btc.id, tf);
         btcTfs[tf] = indicators.computeAll(candles);
-      } catch {
+      } catch (exc) {
+        console.warn(`Skipping ${tf} timeframe for BTC market regime: ${(exc as Error).message}`);
         continue;
       }
     }

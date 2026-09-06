@@ -50,6 +50,29 @@ const TIMEFRAME_TO_DAYS: Record<string, number> = {
   "1d": 90,
 };
 
+// CoinGecko's free public API enforces a strict rate limit (roughly
+// 10-30 requests/minute). A full scan can fire 100+ requests, so every
+// request is serialized through this module-level throttle with a minimum
+// gap between calls and a retry-with-backoff on 429s, rather than hammering
+// the API and having most calls fail silently.
+const MIN_REQUEST_GAP_MS = 1500;
+let lastRequestAt = 0;
+let requestQueue: Promise<void> = Promise.resolve();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function throttle(): Promise<void> {
+  const runNext = requestQueue.then(async () => {
+    const wait = MIN_REQUEST_GAP_MS - (Date.now() - lastRequestAt);
+    if (wait > 0) await sleep(wait);
+    lastRequestAt = Date.now();
+  });
+  requestQueue = runNext;
+  return runNext;
+}
+
 export class MarketDataProvider {
   private baseUrl: string;
   private apiKey: string;
@@ -68,19 +91,30 @@ export class MarketDataProvider {
   private async get(path: string, params: Record<string, string | number>): Promise<any> {
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-    let res: Response;
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20_000);
-      res = await fetch(url.toString(), { headers: this.headers(), signal: controller.signal });
-      clearTimeout(timeout);
-    } catch (exc: any) {
-      throw new MarketDataError(`Failed to fetch ${path}: ${exc.message}`);
+
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      await throttle();
+      let res: Response;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20_000);
+        res = await fetch(url.toString(), { headers: this.headers(), signal: controller.signal });
+        clearTimeout(timeout);
+      } catch (exc: any) {
+        throw new MarketDataError(`Failed to fetch ${path}: ${exc.message}`);
+      }
+      if (res.status === 429 && attempt < maxRetries) {
+        const retryAfter = parseFloat(res.headers.get("retry-after") || "") || (attempt + 1) * 5;
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+      if (!res.ok) {
+        throw new MarketDataError(`Failed to fetch ${path}: HTTP ${res.status}`);
+      }
+      return res.json();
     }
-    if (!res.ok) {
-      throw new MarketDataError(`Failed to fetch ${path}: HTTP ${res.status}`);
-    }
-    return res.json();
+    throw new MarketDataError(`Failed to fetch ${path}: rate limited after ${maxRetries} retries`);
   }
 
   async getMarketSnapshot(poolSize: number): Promise<CoinSnapshot[]> {
